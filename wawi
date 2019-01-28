@@ -1,0 +1,1111 @@
+<?php
+/*phpgrid fuer happygreens.eu - gambio */
+/* Urlparameter einbinden, falls noch nicht */
+include_once("../config.php");
+		
+/* menue top bottom */
+$mt = htmlspecialchars($_GET["mt"]);
+if (!isset($mt)) $mt = '';
+$mb = htmlspecialchars($_GET["mb"]);
+if (!isset($mb)) $mb = '';
+/* language_id  for businessfield*/
+$lidbiz= $_GET["lidbiz"];
+if (!isset($lidbiz)) $lidbiz = '28';
+$ti = htmlspecialchars($_GET["ti"]);  
+if (!isset($ti)) $ti = 'App';
+ ini_set('display_errors', '1'); 
+/** 
+ * PHP Grid Component 
+ * 
+ * @author Abu Ghufran <gridphp@gmail.com> - http://www.phpgrid.org 
+ */ 
+
+// set up DB - name of the table used is defined later 
+
+   /*
+   bei tests immer nur EINE Datei verwenden, zu testende Dinge auskommentieren. Nur ein Aspekt jeweils abfragen, abhaken und nächsten Aspekt testen.  Bei einer Datei, wo zusatzliche Spalten aus anderen Tabellen eingelesen werden muss jedee Spalte im sql-befehl referenziert werden.
+   */
+    
+   
+include_once("../config.php");
+include_once("../../includes/configure.php");
+/* additional tables for setting up the gambio administration system  */
+include_once("setup_plus_tables.php");
+
+
+$db_conf = array();
+$db_conf["type"] = "mysqli";
+$db_conf["server"] = DB_SERVER; 
+$db_conf["user"] = DB_SERVER_USERNAME; 
+$db_conf["password"] = DB_SERVER_PASSWORD; 
+$db_conf["database"] = DB_DATABASE;
+$v = $_GET["v"];if (!isset($v)) $v = ''; // Version - suffixes for updatetests
+include(PHPGRID_LIBPATH.'inc/jqgrid_dist'."$v".'.php');
+
+
+// ----------------------
+
+// Execute a call to a procedure 
+  $mysqli = new mysqli(DB_SERVER,DB_SERVER_USERNAME,DB_SERVER_PASSWORD, DB_DATABASE);
+    if(!$mysqli->query("
+CREATE TABLE if not exists `plusinfo_products` (
+ `id` int(10) NOT NULL AUTO_INCREMENT ,
+ `products_id` int(11) DEFAULT NULL,
+ `review_date` date DEFAULT NULL,
+ `bulk` varchar(150) NOT NULL,
+ `bulk_unit` varchar(150) NOT NULL,
+ `amount_per_pak` varchar(150) NOT NULL,
+ `weight_per_part` varchar(150) NOT NULL,
+ `break_even_price` text NOT NULL,
+ `reminder_level` varchar(50) DEFAULT NULL,
+ `reminder_enabled` int(5) NOT NULL,
+ `amazon_asin` int(22) NOT NULL DEFAULT '1',
+ `amazon_sku` varchar(22) NOT NULL DEFAULT '1',
+ `amazon_isbn` varchar(33) NOT NULL DEFAULT '1',
+ `pzn_de` int(44) NOT NULL DEFAULT '1',
+ `pzn_at` int(44) NOT NULL DEFAULT '1',
+ `pzn_ch` int(44) NOT NULL DEFAULT '1',
+ `txt_inhalt` varchar(100) NOT NULL,
+ `menge` text CHARACTER SET latin1,
+ PRIMARY KEY (`id`),
+
+ FOREIGN KEY (products_id) REFERENCES products (products_id)
+) ENGINE=MyISAM AUTO_INCREMENT=2889 DEFAULT CHARSET=utf8
+
+	"))
+    {
+        echo $mysqli->error;
+        if($mysqli) $mysqli->close(); // Close DB connection
+    }
+
+
+/* Fremdschlüsselreferenzierung auf products_id aus products, erste Spalte ist bei phpgrid eh immer die referenzspalte
+ALTER TABLE plusinfo_products 
+ADD FOREIGN KEY (products_id) REFERENCES products (products_id);
+*/
+
+    $mysqli = new mysqli(DB_SERVER,DB_SERVER_USERNAME,DB_SERVER_PASSWORD, DB_DATABASE);
+    if(!$mysqli->query("
+	insert ignore into plusinfo_products
+		
+		select 
+		NULL id,
+		p.products_id products_id,
+		NULL review_date ,
+		NULL bulk ,
+		'kg' bulk_unit,
+		NULL amount_per_pak,
+		NULL weight_per_part,
+
+		NULL break_even_price ,
+		5 reminder_level ,
+		1 reminder_enabled, ''	 `amazon_asin`, '' `amazon_sku`, ''`amazon_isbn`, ''`pzn_de`, ''`pzn_at`, ''`pzn_ch`, ''`txt_inhalt`, ''`menge`
+		
+		
+		FROM products p 
+		LEFT JOIN plusinfo_products pp on pp.products_id = p.products_id
+		
+		where pp.products_id is null
+	"))
+    {
+        echo $mysqli->error;
+        if($mysqli) $mysqli->close(); // Close DB connection
+    }
+	// where pp.products_id is null;
+	// dort einfügen, wo noch nicht da = also null
+	
+	
+	
+
+
+/* 
+setzt Menge, wo Bulkware vorhanden. Bulkware muss dazu ausgefüllt sein.,darf nicht 0 sein.
+übernimmt Wert aus fiktiver Mengenerrechnung aus  Bulkwarengewicht durch Produktgewicht, z.B. 1000 kg / 200 g Produktgewicht ergibt fiktove Menge von 5000 Stück. 
+*/
+
+    $mysqli = new mysqli(DB_SERVER,DB_SERVER_USERNAME,DB_SERVER_PASSWORD, DB_DATABASE);
+    if(!$mysqli->query("
+	update products p
+	 left join plusinfo_products pp on p.products_id = pp.products_id
+	 left join products_description pd on p.products_id = pd.products_id
+	 
+	 SET p.products_quantity = pp.bulk / p.products_weight
+	 where p.products_status = 1
+	 and p.products_model <> 'content'
+	 and pd.language_id = 2
+	 and pp.bulk / p.products_weight <> 0
+	"))
+    {
+        echo $mysqli->error;
+        if($mysqli) $mysqli->close(); // Close DB connection
+    }
+	// where pp.products_id is null;
+	// dort einfügen, wo noch nicht da = also null
+
+
+
+//-----------------------------------------------------------------------------------
+
+// set up DB
+
+//-----------------------------------------------------------------------------------
+//---------------------------  c o l u m s ------------------------------------------
+/*
+
+$col = array(); 
+$col["title"] = "products_id"; // caption - visible title - of column 
+$col["name"] = "products_id"; //  column-name from sql (tablefield or field-alias)  
+
+$col["width"] = "10"; 
+
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = false;  // 7 -  one-line-textfield 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = true; // 12 -  if the colum is hidden - no change
+
+
+$cols[] = $col;    
+*/
+
+$col = array(); 
+$col["title"] = "products_id"; // caption - visible title - of column 
+$col["name"] = "products_id"; //  column-name from sql (tablefield or field-alias)  
+
+$col["width"] = "5"; 
+
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = false;  // 7 -  one-line-textfield  - not ediable because it joined and not the maintable which is going to be modified -otherwise a  failure. - joined colums cant  be saved, thus need to beee always false editable. Nicht etierbar weil gejoint /////////////////////////////////////////////////////////
+$col["hidden"] = true; // 12 -  if the colum is hidden - no change
+$col["export"] = false; 
+
+$cols[] = $col;
+
+$col = array(); $col["title"] = "id"; // caption - visible title - of column 
+$col["name"] = "id"; //  column-name from sql (tablefield or field-alias)  
+
+$col["width"] = "5"; 
+
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = false;  // 7 -  one-line-textfield  - not ediable because it joined and not the maintable which is going to be modified -otherwise a  failure. - joined colums cant  be saved, thus need to beee always false editable. Nicht etierbar weil gejoint /////////////////////////////////////////////////////////
+$col["hidden"] = true; // 12 -  if the colum is hidden - no change
+$col["export"] = false; 
+
+$cols[] = $col;  
+
+
+
+
+
+
+# Custom made column to show link, must have default value as it's not db driven 
+$col = array(); 
+$col["title"] = "Produktbild"; 
+$col["name"] = "products_image"; 
+$col["width"] = "4"; 
+$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+$col["align"] = "center"; 
+$col["search"] = false; 
+$col["export"] = false; 
+
+$col["sortable"] = true; 
+$col["editable"] = false;  // 7 -  one-line-textfield 
+# class='fancybox' to open image in fancybox 
+$col["default"] = "<img height=25 src='../../../images/product_images/original_images/{products_image}'>"; 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+
+$cols[] = $col;
+
+$col = array(); $col["title"] = "Produktname"; // caption - visible title - of column 
+$col["name"] = "products_name"; //  column-name from sql (tablefield or field-alias)  
+
+$col["width"] = "4"; 
+
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = false;  // 7 -  one-line-textfield  - not ediable because it joined and not the maintable which is going to be modified -otherwise a  failure. - joined colums cant  be saved, thus need to beee always false editable. Nicht etierbar weil gejoint /////////////////////////////////////////////////////////
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+
+
+$cols[] = $col;
+
+$col = array(); $col["title"] = "EAN"; // caption - visible title - of column 
+$col["name"] = "products_ean"; //  column-name from sql (tablefield or field-alias)  
+
+$col["width"] = "5"; 
+
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = false;  // 7 -  one-line-textfield  - not ediable because it joined and not the maintable which is going to be modified -otherwise a  failure. - joined colums cant  be saved, thus need to beee always false editable. Nicht etierbar weil gejoint /////////////////////////////////////////////////////////
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+$col["export"] = false; 
+
+$cols[] = $col;  
+
+//-----------------------------------------------------------------------------------
+//---------------------------  c o l u m s ------------------------------------------
+$col = array();
+$col["title"] = "Artikelnr"; // caption of column
+$col["name"] = "products_model"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["width"] = "5"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = false;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+  
+$cols[] = $col; 
+//-----------------------------------------------------------------------------------
+//---------------------------  c o l u m s ------------------------------------------
+
+
+	
+
+$col = array();
+$col["title"] = "Packg."; // caption of column
+$col["name"] = "products_quantity"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["align"] = "center";
+
+$col["width"] = "5"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = false;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+ // $col["link"] = "../../../product_info.php?info=p{products_id}"; 
+//$col["linkoptions"] = "target='_parent'"; // extra params with <a> tag
+$cols[] = $col;
+
+$col = array(); $col["title"] = "Bulkw."; // caption of column
+$col["name"] = "bulk"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["align"] = "center";
+
+$col["width"] = "5"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = true;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+ // $col["link"] = "../../../product_info.php?info=p{products_id}"; 
+//$col["linkoptions"] = "target='_parent'"; // extra params with <a> tag
+$cols[] = $col;   
+
+
+ 
+//-----------------------------------------------------------------------------------
+//---------------------------  c o l u m s ------------------------------------------
+$col = array();
+$col["title"] = "Einheit"; // caption of column
+$col["name"] = "bulk_unit"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["width"] = "1"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = true;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+  
+$cols[] = $col;
+
+$col = array(); $col["title"] = "Menge/Packung"; // caption of column
+$col["name"] = "amount_per_pak"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["align"] = "center";
+
+$col["width"] = "5"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = true;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+ // $col["link"] = "../../../product_info.php?info=p{products_id}"; 
+//$col["linkoptions"] = "target='_parent'"; // extra params with <a> tag
+$cols[] = $col;
+
+$col = array(); $col["title"] = "Gewicht/Teil"; // caption of column
+$col["name"] = "weight_per_part"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["width"] = "5"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = true;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+  
+$cols[] = $col;
+
+$col = array(); $col["title"] = "Gewicht mit Umverpackung"; // caption of column
+$col["name"] = "products_weight"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["width"] = "5"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = false;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+  
+$cols[] = $col;
+
+$col = array(); $col["title"] = "Fiktive Packungen"; // caption of column
+$col["name"] = "fiktivebulkmenge"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["width"] = "5"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = false;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+  
+$cols[] = $col;
+
+$col = array(); $col["title"] = "MHD"; // caption - visible title - of column 
+$col["name"] = "review_date"; //  column-name from sql (tablefield or field-alias)  
+
+$col["width"] = "5"; 
+$col["formatter"] = "date"; // 9 -   aditionally wysiwig
+
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = true;  // 7 -  one-line-textfield  - not ediable because it joined and not the maintable which is going to be modified -otherwise a  failure. - joined colums cant  be saved, thus need to beee always false editable. Nicht etierbar weil gejoint /////////////////////////////////////////////////////////
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+
+$cols[] = $col;
+
+$col = array(); $col["title"] = "ab"; // caption of column
+$col["name"] = "reminder_level"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["width"] = "5"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = true;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+  
+  
+  
+$cols[] = $col;
+
+$col = array(); $col["title"] = "ein"; // caption of column
+$col["name"] = "reminder_enabled"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["width"] = "5"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = true;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+
+
+$col["edittype"] = "checkbox"; 
+$col["formatter"] = "checkbox";
+$col["align"] = "center";
+$col["editoptions"] = array("value"=>"1:0"); 
+
+$cols[] = $col;
+
+$col = array(); $col["title"] = "EKP"; // caption of column
+$col["name"] = "break_even_price"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["width"] = "5"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = true;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+$cols[] = $col;
+
+$col = array(); $col["title"] = "VKP"; // caption of column
+$col["name"] = "products_price"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["width"] = "5"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = false;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+$cols[] = $col;
+
+$col = array(); $col["title"] = "Gewinn"; // caption of column
+$col["name"] = "win"; // grid column name, same as db field or alias from sql
+$col["hidden"] = false;
+$col["width"] = "5"; // 4 - width on grid - length of the text to be read
+$col["sortable"] = true; // 5 - if column is sortable false or true  
+$col["search"] = true; // 6 -  this column is not searchable 
+
+$col["editable"] = false;  // 7 -  one-line-textfield 
+//$col["edittype"] = "textarea"; // 8 -  textfield extension
+//$col["formatter"] = "wysiwyg"; // 9 -   aditionally wysiwig
+//$col["formatter"] = "date"; // 9- format as date 
+
+$col["editrules"] = array("edithidden"=>true); // 10 - with these attributes 
+$col["editoptions"] = array("rows"=>4, "cols"=>20); // 11 with these attributes 
+$col["hidden"] = false; // 12 -  if the colum is hidden - no change
+$col["link"] = "statistik_umsatz_pro_produkt.php?list1_products_name={products_name}&kdgruppe=11&tagerueckwirkend=0"; 
+$col["linkoptions"] = "target='_parent'"; // extra params with <a> tag
+
+
+$cols[] = $col; 
+
+
+//---------------------------  c o l u m s ------------------------------------------
+
+# Custom made column to show link, must have default value as it's not db driven 
+
+
+
+
+
+
+//-----------------------------------------------------------------------------------
+//---------------------------  c o l u m s ------------------------------------------
+
+$f = array();
+$f["column"] = "products_quantity";
+$f["op"] = "<";
+$f["value"] = "5000";
+$f["cellcss"] = "'background-color':'darkgreen', 'size':'50px', 'font-size':'15px','color':'black'";
+$f_conditions[] = $f;
+
+
+
+$f = array();
+$f["column"] = "products_quantity";
+$f["op"] = "<";
+$f["value"] = "500";
+$f["cellcss"] = "'background-color':'green', 'font-size':'15px','color':'black'";
+$f_conditions[] = $f;
+
+$f = array();
+$f["column"] = "products_quantity";
+$f["op"] = "<";
+$f["value"] = "50";
+$f["cellcss"] = "'background-color':'lightgreen', 'font-size':'15px','color':'black'";
+$f_conditions[] = $f;
+
+$f = array();
+$f["column"] = "products_quantity";
+$f["op"] = "<";
+$f["value"] = "30";
+$f["cellcss"] = "'background-color':'gold', 'font-size':'15px','color':'black'";
+$f_conditions[] = $f;
+
+
+$f = array();
+$f["column"] = "products_quantity";
+$f["op"] = "<";
+$f["value"] = "20";
+$f["cellcss"] = "'background-color':'yellow', 'font-size':'15px','color':'black'";
+$f_conditions[] = $f;
+
+
+$f = array();
+$f["column"] = "products_quantity";
+$f["op"] = "<";
+$f["value"] = "10";
+$f["cellcss"] = "'background-color':'orange', 'font-size':'15px','color':'black'";
+$f_conditions[] = $f;
+
+$f = array();
+$f["column"] = "products_quantity";
+$f["op"] = "=";
+$f["value"] = "2";
+$f["cellcss"] = "'background-color':'salmon','font-size':'25px','color':'grey'";
+$f_conditions[] = $f;
+
+
+
+$f = array();
+$f["column"] = "products_quantity";
+$f["op"] = "=";
+$f["value"] = "2";
+$f["cellcss"] = "'background-color':'red','font-size':'25px','color':'grey'";
+$f_conditions[] = $f;
+
+
+
+$f = array(); 
+$f["column"] = "products_image"; // exact column name, as defined above in set_columns or sql field name 
+$f["value"] = "999"; 
+$f["css"] = "'background-color':'white', 'color':'black'"; 
+$f_conditions[] = $f; 
+
+
+
+
+$f = array();
+$f["column"] = "products_quantity";
+$f["op"] = "<";
+$f["value"] = "1";
+$f["cellcss"] = "'background-color':'#CC0000', 'font-size':'15px','color':'black'";
+$f_conditions[] = $f;
+
+
+$f = array();
+$f["column"] = "products_quantity";
+$f["op"] = "=";
+$f["value"] = "0";
+$f["cellcss"] = "'background-color':'#FF3333', 'font-size':'15px','color':'black'";
+$f_conditions[] = $f;
+
+
+$f = array();
+$f["column"] = "products_quantity";
+$f["op"] = "<";
+$f["value"] = "-10";
+$f["cellcss"] = "'background-color':'indigo', 'font-size':'25px','color':'grey' ";
+$f_conditions[] = $f;
+
+
+
+
+$f = array();
+$f["column"] = "products_quantity";
+$f["op"] = "<";
+$f["value"] = "-7";
+$f["cellcss"] = "'background-color':'#660033','size':'50px'";
+$f_conditions[] = $f;
+
+
+
+
+
+$f = array();
+$f["column"] = "bulk";
+$f["op"] = ">";
+$f["value"] = "1";
+$f["cellcss"] = "'background-color':'orange','size':'50px'";
+$f_conditions[] = $f;
+
+
+
+
+
+
+
+//-----------------------------------------------------------------------------------
+//---------------------------  Settings of the grid layout -------------------------
+//-----------------------------------------------------------------------------------
+
+$g->error_msg="Ein Parameter in der Browserzeile fehlt. Bitte erfragen Sie diesen beim Admin dieser Seite";
+$g = new jqgrid($db_conf);$g->set_conditional_css($f_conditions);
+
+$grid["rowNum"] = 200; // Anzahl der Zeilen auf der Seite. Bei Bulkeditierung ruhig hoch setzen.
+$grid["sortname"] = 'products_name'; // by default sort grid by this field 
+$grid["sortorder"] = "asc"; // ASC or DESC 
+$grid["caption"] = "WAWI - Produkt- bis Finanzplanung"; // Titel der Tabelle
+$grid["autowidth"] = true; // expand grid to screen width 
+$grid["shrinkToFit"] = true;
+$grid["pgbuttons"] = true;
+$grid["height"] = "100%";
+//$grid["width"] = "900";
+$grid["multikey"] = true; 
+$grid["multiselect"] = false;
+$grid["loadtext"] = "Wir laden ..."; // allow you to multi-select through checkboxes 
+$grid["add_options"] = array('width'=>'600', 'top'=>'10', 'left'=>'200'); 
+$grid["edit_options"] = array('width'=>'600', 'top'=>'10', 'left'=>'200'); 
+$grid["resizable"] = true; // defaults to false 
+$grid["toolbar"] = "top";  // toolbar oben+
+//$grid["export"]["range"] = "filtered";
+//$grid["cellEdit"] = true;  //geht nicht mit wisiwig 
+
+$grid["export"] = array("format"=>"pdf", "filename"=>"Inventurliste", "sheetname"=>"Inventurliste");
+$grid["export"] = array("filename"=>"Inventurliste", "heading"=>"Inventurliste", "orientation"=>"portrait", "paper"=>"a4"); // or portrait / landscape
+
+
+
+// group columns header 
+$g->set_group_header( array( 
+                            "useColSpanStyle"=>true, 
+                            "groupHeaders"=>array( 
+                       
+								 array( 
+                                    "startColumnName"=>'products_name', // group starts from this column 
+                                    "numberOfColumns"=>3, // group span to next 2 columns 
+                                    "titleText"=>'Name EAN Artikelnr' // caption of group header 
+                                ), 
+								
+                                array(
+                                    "startColumnName"=>'products_quantity', // group starts from this column 
+                                    "numberOfColumns"=>3, // group span to next 2 columns 
+                                    "titleText"=>'Bestand & Bulkware' // caption of group header 
+                                ),
+								
+								    array(
+                                    "startColumnName"=>'amount_per_pak', // group starts from this column 
+                                    "numberOfColumns"=>3, // group span to next 2 columns 
+                                    "titleText"=>'- fiktive Packungsmenge nach Gewicht' // caption of group header 
+                                ),
+								
+								
+								   array( 
+                                    "startColumnName"=>'reminder_level', // group starts from this column 
+                                    "numberOfColumns"=>3, // group span to next 2 columns 
+                                    "titleText"=>'Wiedervorlagemails ab Bestand x' // caption of group header 
+                                ),
+								 array( 
+                                    "startColumnName"=>'break_even_price', // group starts from this column 
+                                    "numberOfColumns"=>3, // group span to next 2 columns 
+                                    "titleText"=>'Preisspanne pro Packung' // caption of group header 
+                                ) 
+			
+                            ) 
+                        ) 
+                    ); 
+
+
+$g->set_options($grid); 
+
+$g->set_actions(array(     
+      					 "add"=>$add,  // allow/disallow add 
+                        "edit"=>$e, // allow/disallow edit 
+                        "delete"=>false, //  EIN UND AUSSCHALTEN  WENN REDAKTEUR NICHT LOESCHEN DARF
+                        "rowactions"=>$e, // show/hide option to add/edit/del/save  // show/hide row wise edit/del/save option 
+                        "search" => "advance", // show single/multi field search condition (e.g. simple or advance) 
+                        "showhidecolumns" => false, 
+						"export_excel"=>false, // show/hide export to excel option - must set export xlsx params 
+                        "export_pdf"=>true, // show/hide export to pdf option - must set pdf params 
+                        "export_csv"=>false, // show/hide export to pdf option - must set pdf params 
+						"autofilter" => true, // show/hide autofilter for search 
+						
+                    )  
+                ); 
+
+//-----------------------------------------------------------------------------------
+//---------------------------  Settings of the grid layout -------------------------
+//-----------------------------------------------------------------------------------
+
+
+
+
+
+//SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+//QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ
+//LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL
+
+// // you can provide custom SQL query to display data 
+// $g->select_command = "SELECT * FROM (SELECT i.id, invdate , c.name, 
+//                         i.note, i.total, i.closed FROM invheader i 
+//                         INNER JOIN clients c ON c.client_id = i.client_id) o"; 
+
+//-----------------------------------------------------------------------------------
+// you can provide custom SQL query to display data - das sql hier dupliziert eine bestehende reihe.
+ $g->select_command = "
+ 
+ 
+SELECT 
+ pp.products_id products_id,
+ p.products_model,
+ p.products_ean,
+ left(pp.review_date,4) review_date,
+ pd.products_name products_name,
+ 
+ round(p.products_quantity,0) products_quantity,
+ 		 pp.bulk  bulk,
+		 pp.bulk_unit,
+		 pp.amount_per_pak,
+		 pp.weight_per_part,
+			 pp.amount_per_pak* pp.weight_per_part fiktivebulkmengeexakt,
+			 pp.bulk / p.products_weight fiktivebulkmenge,
+
+		 pp.break_even_price ,
+		  round(p.products_price,2) products_price,
+round(p.products_price,2) - round(pp.break_even_price,2)   win,
+		 pp.reminder_level ,
+		 pp.reminder_enabled,
+		round(p.products_weight,0) products_weight,
+		 p.products_image
+		
+ from plusinfo_products pp
+ left join products p on p.products_id = pp.products_id
+ left join products_description pd on p.products_id = pd.products_id
+ where p.products_status = $ps
+ and p.products_model <> 'content'
+ and pd.language_id = 2
+ 
+ "; 
+ 
+ 
+/*
+
+Sql-Befehl zwischen die  " " setzen.
+Wichtig. Bei einer Abfrage mit join müssen alle Felder, die editierbar sein sollen auch mit in die Selectabfrage genommen werden.  Bei der letzten Abfrage wird KEIN Komma gesetzt, vorher ja.   Hinzugejointe Spalten müssen immer auf etitable false gesesezt werden
+ 
+ */
+ 
+ 
+ 
+//-----------------------------------------------------------------------------------
+
+
+//SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+//QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ
+//LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL
+
+
+
+//SETUP DB-Table-NAME -- USED FOR CRUD - ACTIONS -
+//SETUP DB-Table-NAME -- USED FOR CRUD - ACTIONS -
+//SETUP DB-Table-NAME -- USED FOR CRUD - ACTIONS -
+
+// this db table will be used for add,edit,delete 
+$g->table = "plusinfo_products"; // Name  of databasetable for instance: content_manager  http://health-corner.net/dropshipping/admin/includes/describe_tables-version1.php
+
+//SETUP DB-Table-NAME -- USED FOR CRUD - ACTIONS -
+//SETUP DB-Table-NAME -- USED FOR CRUD - ACTIONS -
+//SETUP DB-Table-NAME -- USED FOR CRUD - ACTIONS -
+
+
+
+
+
+// pass the cooked columns to grid 
+$g->set_columns($cols); 
+
+// generate grid output, with unique grid name as 'list1' 
+$out = $g->render("list1"); 
+?> 
+
+
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd"> 
+<html>  <head> 
+<meta name="title" content="App">
+<meta name="robots" content="<?php echo $robots?>">
+<!-- spezific layout & language:  themes/ui-lightness/ grid.locale__ -->
+<link rel="stylesheet" type="text/css" media="screen" href="../lib/js/themes/<?php echo $th?>/jquery-ui.custom.css"></link>
+<link rel="stylesheet" type="text/css" media="screen" href="../lib/js/jqgrid/css/ui.jqgrid.css"></link>	
+<script src="../lib/js/ckeditor/ckeditor.js" type="text/javascript"></script>
+<script src="../lib/js/jquery.min.js" type="text/javascript"></script>
+<script src="../lib/js/jqgrid/js/i18n/grid.locale-<?php echo $la?>.js" type="text/javascript"></script>
+<script src="../lib/js/jqgrid/js/jquery.jqGrid.min.js" type="text/javascript"></script>	
+<!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+<!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+<!--[if lt IE 9]>
+<script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+<script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+<![endif]-->
+<!--[if lt IE 9]>
+<script src="http://html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+<![endif]-->
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<!-- start phpgrid parameter 
+/* phpgrid parameter z.B. Textanordnung oben included in scrolling.nav*/ -->
+<!-- start bootstrap parameter standard  -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.0/css/bootstrap.min.css">
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.0/js/bootstrap.min.js"></script>
+
+
+<!-- start bootstrap parameter plugins  -->
+  <link href="../lib/fontawesome/css/all.css" rel="stylesheet"> <!--load all styles -->
+<link rel="stylesheet" type="text/css" href="https://fonts.googleapis.com/css?family=Cousine|Source+Code+Pro|Inconsolata|Droid+Sans">
+ <!-- Scrolling Nav  -->
+<link href="css/scrolling-nav.css" rel="stylesheet">
+<script src="js/scrolling-nav.js"></script>
+<script src="js/jquery.easing.min.js"></script>
+<!-- Menue rollover -->
+<script src="../bootstrap/js/bootstrap-hover-dropdown.js"></script>
+<!-- Multiple Select -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/multiple-select/1.2.2/multiple-select.css" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/multiple-select/1.2.2/multiple-select.js"></script>	
+<title>Produktparameter Warenwirtschaft</title>
+<script src="../lib/js/themes/jquery-ui.custom.min.js" type="text/javascript"></script>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+</head> 
+<body>
+ <!-- snippet für urlnachladung  ende--> 
+<!-- popopminimenue--> <?php include("menue-level2_lagersystem.php");?>
+ <!-- popopminimenue-->
+  <script> 
+    var opts = { 
+        'loadComplete': function () { 
+            edit_all(); 
+                 
+            // up/down/tab/shift-tab navigation 
+            $('#list1').keydown(function (e) { 
+                var $td = $(e.target).closest("td"), 
+                    $tr = $td.closest("tr.jqgrow"), 
+                    ci, ri, rows = this.rows; 
+                if ($td.length === 0 || $tr.length === 0) { 
+                    return; 
+                } 
+                ci = $.jgrid.getCellIndex($td[0]); 
+                ri = $tr[0].rowIndex; 
+                if (e.keyCode === $.ui.keyCode.UP) { // 38 
+                    if (ri > 0) { 
+                        $(rows[ri-1].cells[ci]).find("input,select,textarea").focus(); 
+                    } 
+                } 
+                if (e.keyCode === $.ui.keyCode.DOWN) { // 40 
+                    if (ri + 1 < rows.length) { 
+                        $(rows[ri+1].cells[ci]).find("input,select,textarea").focus(); 
+                    } 
+                } 
+            });                 
+        } 
+    }; 
+     
+    function save_all() 
+    { 
+        var $this = jQuery("#list1"), ids = $this.jqGrid('getDataIDs'), i, l = ids.length; 
+        for (i = 0; i < l; i++) { 
+            id = ids[i]; 
+            jQuery("#list1").jqGrid('saveRow', id); 
+            jQuery('#edit_row_list1_'+id).show(); 
+            jQuery('#save_row_list1_'+id).hide();                 
+        } 
+    } 
+     
+    function edit_all() 
+    { 
+        var $this = $("#list1"), ids = $this.jqGrid('getDataIDs'), i, l = ids.length; 
+        for (i = 0; i < l; i++) { 
+            // list1 is the name of grid, passed in ->render() function 
+            id = ids[i]; 
+            jQuery('#list1').editRow(id, true, function(){}, function(){ 
+
+                                                    if (jQuery('#edit_row_list1_').val() != undefined) 
+                                                    { 
+                                                        jQuery('#edit_row_list1_'+id).show(); 
+                                                        jQuery('#save_row_list1_'+id).hide(); 
+                                                    } 
+                                                    return true; 
+
+                                                },null,null,function(){ 
+                                                },null, 
+                                                function(){ 
+
+                                                    if (jQuery('#edit_row_list1_').val() != undefined) 
+                                                    { 
+                                                        jQuery('#edit_row_list1_'+id).show(); 
+                                                        jQuery('#save_row_list1_'+id).hide(); 
+                                                    } 
+                                                    return true; 
+                                                } 
+                        );  
+             
+            jQuery('#edit_row_list1_'+id).hide(); 
+            jQuery('#save_row_list1_'+id).show(); 
+        } 
+         
+        // set focus on first cell 
+        setTimeout('jQuery(".editable:first").focus()',100); 
+    } 
+     
+    // todo - not to change icon on save and keep in edit mode 
+    // $.jgrid.inlineEdit.aftersavefunc = function(rowid) 
+        // {  
+            // // setTimeout('$("#edit_row_list1_3").click();',1000); 
+            // jQuery("#list1").jqGrid('editRow', rowid);  
+            // jQuery('#edit_row_list1_'+rowid).hide(); 
+            // jQuery('#save_row_list1_'+rowid).show();         
+        // } 
+
+    </script> 
+ 
+ 
+ 
+ Sortierung nach Speicherung der Zeilen möglich.
+<?php  echo $out?> 
+ <button onclick="edit_all()">Alle Zeilen bearbeiten</button> 
+ <button onclick="save_all()">Alle Zeilen speichern</button> 
+
+<?php include("../config_scripts.php");?>
+</p> 
+
+    <!-- Auswahlreiter navi start -->
+  <ul class="nav nav-tabs" role="tablist">
+    <li role="presentation" class="active"><a href="#home" aria-controls="home" role="tab" data-toggle="tab">Zusatzdaten</a></li>
+    <li role="presentation"><a href="#1step" aria-controls="profile" role="tab" data-toggle="tab">Bestand & Bulk</a></li>
+    <li role="presentation"><a href="#2step" aria-controls="messages" role="tab" data-toggle="tab">virtuell verkaufbar</a></li>
+    <li role="presentation"><a href="#3step" aria-controls="settings" role="tab" data-toggle="tab">Wiedervorlagesystem</a></li>
+        <li role="presentation"><a href="#4step" aria-controls="settings" role="tab" data-toggle="tab">Preisberechnungen</a></li>
+
+</ul>
+  <!-- Auswahlreiter Inhalt  -->
+<div class="tab-content">
+  <div role="tabpanel" class="tab-pane fade in active" id="home">
+ <blockquote>  <h3>Zusatzdaten</h3>
+
+<p> Diese Liste  zusätzliche Werte zur Pflege des Produktsortiments </p>
+  </blockquote> 
+  </div>
+  <div role="tabpanel" class="tab-pane fade" id="1step">
+  <blockquote>   <h3>Bulk & Menge</h3>
+           
+    Menge und Gewichtseinheit eintragen, ggfs Menge pro Packungseinheit, z.B. bei Nahrungsergänzung, die Kapselmenge pro Packung. 
+
+Ein zusätzlicher Mechanismus: setzt Menge, wo Bulkware vorhanden. Bulkware muss dazu ausgefüllt sein. Es wird der Wert aus der fiktiven Mengenerrechnung entnommen. Dieser errechnet sich aus  Bulkwarengewicht durch Produktgewicht, z.B. 1000 kg / 200 g Produktgewicht ergibt fiktove Menge von 5000 Stück. Achtung, dieser Automatismus setzt voraus, dass Ware, solange Bulkware vorhanden ist, immer selbstätig im voraus konfektioniert wird. Möchte man eine Erinnerung zu den tatsächlich abgefüllten Produkten aufrecht erhalten, sollte man den Mechanismus rausnehmen.
+
+          </blockquote>       
+              
+</div>
+  <div role="tabpanel" class="tab-pane fade" id="2step" >
+  
+       <blockquote> <h3>virtuell verkaufbar</h3>
+        
+        Errechnet aus Bulkmenge. Entweder pauschal durch <a href="products_preisangabenverordnung.php?<?php echo $_SERVER["QUERY_STRING"]?>">Produktgewicht</a>, wobei die Packung noch abgezogen werden müsste und die Gewichtseinheit gleich sein muss. Oder genauer, durch das Ergebnis aus Einzelteilgewichts mal Packungsinhalt.        
+        
+</div>
+  <div role="tabpanel" class="tab-pane fade" id="3step">
+     <blockquote>  <h3> Erinnerungssystem</h3>
+
+Warenmenge, ab der eine Erinnerung bzw Kaufvorlage über die <a  title="Umwidmung von Artikeln zu SEO-Content" href="lagermonitor_details.php?<?php echo $_SERVER["QUERY_STRING"]?>">Emailvorlagen</a>   ausgesendet werden soll. 
+
+             </blockquote>       
+
+  
+ </div>
+ 
+   <div role="tabpanel" class="tab-pane fade" id="4step">
+     <blockquote>  <h3> Preisberechnungen</h3>
+
+Ist der Einkaufswert eingetragen, kann man daraus den Gewinn pro Produkt errechnen.
+
+             </blockquote>       
+
+  
+ </div>
+ 
+ 
+</div> </div>
+ <!-- Auswahlreiter navi end --> 
+ 
+
+ 
+     <div class="panel panel-default" id="panel3">
+        <div class="panel-heading">
+             <h4 class="panel-title">
+        <a data-toggle="collapse" data-target="#collapseThree"
+           href="#collapseThree" class="collapsed">
+         Profi: Schnellbearbeitung SQL-Beispielcodes
+        </a>
+      </h4>
+
+        </div>
+        <div id="collapseThree" class="panel-collapse collapse">
+            <div class="panel-body">
+<blockquote>        
+Folgende Codes sind per <a href="../../minisql.php?<?php echo $_SERVER["QUERY_STRING"]?>">SQL-Eingabe </a> ausführbar:
+
+<pre>
+#Datum setzen nach Kriterium
+UPDATE  plusinfo_products pp
+ left join products p on p.products_id = pp.products_id
+ left join products_description pd on p.products_id = pd.products_id
+ LEFT JOIN manufacturers ma ON ma.manufacturers_id = p.manufacturers_id
+ LEFT JOIN products_to_categories ptc ON ptc.products_id = p.products_id
+ Left JOIN categories c on ptc.categories_id = c.categories_id
+ LEFT JOIN categories_description cd ON cd.categories_id =  c.categories_id
+SET pp.review_date = '2017-03-01'
+WHERE 
+#ma.manufacturers_name = 'GNP Products'
+#AND p.products_model    IN ('10003', '10005', 'tx1030', '10041');
+pd.products_name LIKE   ('%Producktname1%')
+and pd.products_name LIKE   ('%Productname2%')
+
+ 
+
+</pre> 
+</blockquote> 
+       
+            
+            
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+
+
+</body> 
+</html> 
